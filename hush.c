@@ -55,7 +55,7 @@ _exit:
 }
 
 int client(const char *host, const char *port) {
-	struct addrinfo *ai;
+	struct addrinfo *ai = NULL;
 	int en = 0, eval = EXIT_SUCCESS;
 	if ((en = getaddrinfo(host, port, NULL, &ai))) {
 		fprintf(stderr, "%s: getaddrinfo: %s\n", pname, gai_strerror(en));
@@ -63,6 +63,9 @@ int client(const char *host, const char *port) {
 	}
 
 	int sockfd = socket(ai->ai_family, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		fprintf(stderr, "%s: socket: %s\n", pname, strerror(errno));
+	}
 	if (connect(sockfd, ai->ai_addr, ai->ai_addrlen) < 0) {
 		fprintf(stderr, "%s: connect: %s\n", pname, strerror(errno));
 		EXIT(EXIT_FAILURE);
@@ -77,6 +80,32 @@ _exit:
 }
 
 int server(const char *port) {
-	return EXIT_SUCCESS;
+	struct addrinfo *ai = NULL;
+	int en = 0, eval = EXIT_SUCCESS;
+	if ((en = getaddrinfo(NULL, port, NULL, &ai))) {
+		fprintf(stderr, "%s: getaddrinfo: %s\n", pname, gai_strerror(en));
+		EXIT(EXIT_FAILURE);
+	}
+
+	int sockfd = socket(ai->ai_family, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		fprintf(stderr, "%s: socket: %s\n", pname, strerror(errno));
+		EXIT(EXIT_FAILURE);
+	}
+	if (bind(sockfd, ai->ai_addr, ai->ai_addrlen) < 0) {
+		fprintf(stderr, "%s: bind: %s\n", pname, strerror(errno));
+		EXIT(EXIT_FAILURE);
+	}
+	if (listen(sockfd, 0)) {
+		fprintf(stderr, "%s: listen: %s\n", pname, strerror(errno));
+		EXIT(EXIT_FAILURE);
+	}
+
+	FILE *sock = fdopen(sockfd, "rw");
+	fclose(sock);
+
+_exit:
+	if (ai) freeaddrinfo(ai);
+	return eval;
 }
 
