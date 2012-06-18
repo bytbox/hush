@@ -1,0 +1,11 @@
+"Do one thing, and do it well." `hush` is a lightweight chat application for
+textual and audio communication between two computers. It is not meant to be
+used for conference calls, or sending files, or creating chat rooms - it simply
+opens a connection between two computers and sends text and audio over it, in
+real-time.
+
+Although the two computer are concepetually equal, due to the realtities of
+networking, one must be the "server" (listening on a port) and the other the
+"client".
+
+
