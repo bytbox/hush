@@ -1,4 +1,4 @@
-// TODO handle signals and errors more nicely
+// TODO handle signals more nicely
 
 // Standard Libraries
 #include <errno.h>
