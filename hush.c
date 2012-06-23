@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 // Networking
 #include <sys/types.h>
@@ -117,6 +118,7 @@ int server(const char *port) {
 		fprintf(stderr, "%s: bind: %s\n", pname, strerror(errno));
 		EXIT(EXIT_FAILURE);
 	}
+_listen:
 	if (listen(sockfd, 0) < 0) {
 		fprintf(stderr, "%s: listen: %s\n", pname, strerror(errno));
 		EXIT(EXIT_FAILURE);
@@ -129,6 +131,8 @@ int server(const char *port) {
 
 	FILE *sock = fdopen(fd, "rw");
 	fclose(sock);
+
+	goto _listen;
 
 _exit:
 	if (ai) freeaddrinfo(ai);
