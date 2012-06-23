@@ -259,7 +259,11 @@ int chat(int nfd) {
 			}
 
 			// send whatever was read.
-
+			if (send_data(nfd, c, TEXT, 0, text_buf) < 0) {
+				fprintf(stderr, "%s: send_data: %s\n",
+						pname, strerror(errno));
+				EXIT(EXIT_FAILURE);
+			}
 		}
 
 		if (FD_ISSET(nfd, &fds)) { // from network
@@ -278,6 +282,14 @@ int chat(int nfd) {
 				EXIT(EXIT_SUCCESS);
 			}
 			// data was read succesfully
+			switch (pi.type) {
+			case TEXT:
+				// Just spit it out.
+				fwrite(data, 1, c, stdout);
+				break;
+			case SOUND:
+				break;
+			}
 		}
 	}
 
