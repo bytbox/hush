@@ -1,6 +1,8 @@
+// TODO handle signals and errors more nicely
+
 // Standard Libraries
 #include <errno.h>
-#include <signal.h> // TODO
+#include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -142,7 +144,7 @@ _exit:
 	return eval;
 }
 
-enum OFFSETS {LENGTH=0, TYPE=2, FLAGS=3, DATA=4};
+enum OFFSETS {OLENGTH=0, OTYPE=2, OFLAGS=3, ODATA=4};
 
 int send_data(int fd, short len, enum TYPE type, char flags, const char *data) {
 	/* The format of the data sent is:
@@ -155,12 +157,12 @@ int send_data(int fd, short len, enum TYPE type, char flags, const char *data) {
 		errno = EOVERFLOW;
 		return EXIT_FAILURE;
 	}
-	int plen = len + DATA;
+	int plen = len + ODATA;
 	char *pbuf = (char *)malloc(plen);
-	COPY2(pbuf + LENGTH, len);
-	COPY2(pbuf + TYPE, len);
-	COPY2(pbuf + FLAGS, len);
-	memcpy(pbuf + DATA, data, len);
+	COPY2(pbuf + OLENGTH, len);
+	COPY2(pbuf + OTYPE, type);
+	COPY2(pbuf + OFLAGS, flags);
+	memcpy(pbuf + ODATA, data, len);
 
 	if (write(fd, pbuf, plen) < 0) {
 		int x = errno;
@@ -179,48 +181,112 @@ struct packet_info {
 	char flags;
 };
 
+// Read a data packet from the network.
+// 
+// Our return value will be -1 if an error was encountered (such as a corrupted
+// packet), 0 if EOF was reached (without error), and otherwise the size of the
+// data received. The data and any available meta-information will be placed in
+// the passed packet_info struct.
 int read_data(int fd, struct packet_info *pi, char **data, int bufsize) {
-	static char tbuf[DATA];
-	if (read(fd, tbuf, sizeof(tbuf)) < 0)
-		return EXIT_FAILURE;
-	COPY1(pi->len, tbuf + LENGTH);
-	COPY1(pi->type, tbuf + TYPE);
-	COPY1(pi->flags, tbuf + FLAGS);
+	static char tbuf[ODATA];
+	int c;
+	c = read(fd, tbuf, sizeof(tbuf));
+	if (c < 0)
+		return -1;
+	if (c != sizeof(tbuf)) // EOF
+		return 0;
+	COPY1(pi->len, tbuf + OLENGTH);
+	COPY1(pi->type, tbuf + OTYPE);
+	COPY1(pi->flags, tbuf + OFLAGS);
 
 	if (pi->len > bufsize) {
-		if (*data) free(*data);
-		while (pi->len > bufsize) bufsize *= 1;
+		if (bufsize < 1) {
+			bufsize = 1;
+		} else free(*data);
+		while (pi->len > bufsize) bufsize *= 2;
 		*data = (char *)malloc(bufsize);
 	}
-	if (read(fd, *data, pi->len) < 0)
-		return EXIT_FAILURE;
+	c = read(fd, *data, pi->len);
+	if (c != pi->len)
+		return -1;
 	return bufsize;
 }
 
+#ifndef TEXT_BUF_SIZE
+#define TEXT_BUF_SIZE (1 << 10)
+#endif
+
 int chat(int nfd) {
 	int eval = EXIT_SUCCESS;
+	char text_buf[TEXT_BUF_SIZE];
 
-	// We need to be reading from the network, as well as any local input
-	// streams.
+	fprintf(stderr, "  :connection open\n");
+
+	// We use select() to read from input streams, but we must have a very
+	// short timeout to allow us to collect (and play) audio.
 	fd_set fds;
-	FD_ZERO(&fds);
-	FD_SET(fileno(stdin), &fds);
-	FD_SET(nfd, &fds);
-
+	int nfds = nfd+1;
 	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 10000; // 10ms
-	while (select(2, &fds, NULL, NULL, &tv) >= 0) {
-		tv.tv_sec = 0;
+
+	while (1) {
+		// prepare socket list
+		FD_ZERO(&fds);
+		FD_SET(fileno(stdin), &fds);
+		FD_SET(nfd, &fds);
+
+		// set the timeout
+		tv.tv_sec = 10;
 		tv.tv_usec = 10000; // 10ms
+
+		if (select(nfds, &fds, NULL, NULL, &tv) < 0) {
+			fprintf(stderr, "%s: select: %s\n",
+					pname, strerror(errno));
+			EXIT(EXIT_FAILURE);
+		}
+
+		if (FD_ISSET(fileno(stdin), &fds)) { // from stdin
+			int c = read(fileno(stdin), text_buf, TEXT_BUF_SIZE);
+			if (c < 0) {
+				fprintf(stderr, "%s: read(stdin, ...): %s\n",
+						pname, strerror(errno));
+				EXIT(EXIT_FAILURE);
+			}
+
+			if (c == 0) {
+				// end of file - this means the user is trying
+				// to terminate the connection.
+				EXIT(EXIT_SUCCESS);
+			}
+
+			// send whatever was read.
+
+		}
+
+		if (FD_ISSET(nfd, &fds)) { // from network
+			static char *data;
+			static int bufsize = 0;
+			struct packet_info pi;
+			int c = read_data(nfd, &pi, &data, bufsize);
+			if (c < 0) {
+				fprintf(stderr, "%s: read_data: %s\n",
+						pname, strerror(errno));
+				EXIT(EXIT_FAILURE);
+			}
+			if (c == 0) {
+				// The remote end terminated the connection.
+				fprintf(stderr, "  :connection terminated\n");
+				EXIT(EXIT_SUCCESS);
+			}
+			// data was read succesfully
+		}
 	}
 
-	//select(2, fds, 0, 0, NULL);
-
+	/*
 	if (send_data(nfd, 10, TEXT, 0, "hellotheremyfriend") < 0) {
 		fprintf(stderr, "%s: send_data: %s\n", pname, strerror(errno));
 		EXIT(EXIT_FAILURE);
 	}
+	*/
 
 _exit:
 	close(nfd);

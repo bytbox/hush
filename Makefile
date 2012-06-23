@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Werror -O0 -g
+CFLAGS = -Wall -Wunused-function -Wunused-parameter -Werror -O0 -g
 #ALSALIB = -lasound
 LDFLAGS = ${ALSALIB}
 
