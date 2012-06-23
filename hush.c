@@ -293,13 +293,6 @@ int chat(int nfd) {
 		}
 	}
 
-	/*
-	if (send_data(nfd, 10, TEXT, 0, "hellotheremyfriend") < 0) {
-		fprintf(stderr, "%s: send_data: %s\n", pname, strerror(errno));
-		EXIT(EXIT_FAILURE);
-	}
-	*/
-
 _exit:
 	close(nfd);
 	return eval;
