@@ -247,7 +247,7 @@ int chat(int nfd) {
 		FD_SET(nfd, &fds);
 
 		// set the timeout
-		tv.tv_sec = 10;
+		tv.tv_sec = 0;
 		tv.tv_usec = 10000; // 10ms
 
 		if (select(nfds, &fds, NULL, NULL, &tv) < 0) {
