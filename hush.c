@@ -1,5 +1,6 @@
 // Standard Libraries
 #include <errno.h>
+#include <signal.h> // TODO
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 
 // Networking
 #include <sys/types.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -22,15 +24,19 @@
 
 #define EXIT(x) eval = x; goto _exit
 
-// Flags for data.
-#define SOUND (1 << 1)
+#define COPY1(d, s) memcpy(&(d), (s), sizeof(d))
+#define COPY2(d, s) memcpy((d), &(s), sizeof(s))
+
+enum TYPE {TEXT, SOUND};
+
+// Flags for data
 
 char *pname;
 
 int client(const char *, const char *);
 int server(const char *);
 
-int send_data(int, char, short, const char *);
+int chat(int);
 
 int main(int argc, char *argv[]) {
 	pname = argv[0];
@@ -86,10 +92,8 @@ int client(const char *host, const char *port) {
 		EXIT(EXIT_FAILURE);
 	}
 
-	if (send_data(sockfd, 0, 5000, "hellot") < 0) {
-		fprintf(stderr, "%s: send_data: %s\n", pname, strerror(errno));
+	if (chat(sockfd) < 0)
 		EXIT(EXIT_FAILURE);
-	}
 
 _exit:
 	if (ai) freeaddrinfo(ai);
@@ -129,8 +133,7 @@ _listen:
 		EXIT(EXIT_FAILURE);
 	}
 
-	FILE *sock = fdopen(fd, "rw");
-	fclose(sock);
+	chat(fd);
 
 	goto _listen;
 
@@ -139,17 +142,88 @@ _exit:
 	return eval;
 }
 
-int send_data(int fd, char flags, short len, const char *data) {
+enum OFFSETS {LENGTH=0, TYPE=2, FLAGS=3, DATA=4};
+
+int send_data(int fd, short len, enum TYPE type, char flags, const char *data) {
 	/* The format of the data sent is:
-	 *   1   flags
-	 *   2   length (in qwords)
-	 *   3-4 other
+	 *   1-2 length
+	 *   3   type
+	 *   4   flags
 	 *   5+  data
 	 */
 	if (len >= (1 << 16)) { // Send no more than 64 KB of data.
 		errno = EOVERFLOW;
-		return -1;
+		return EXIT_FAILURE;
 	}
-	return 0;
+	int plen = len + DATA;
+	char *pbuf = (char *)malloc(plen);
+	COPY2(pbuf + LENGTH, len);
+	COPY2(pbuf + TYPE, len);
+	COPY2(pbuf + FLAGS, len);
+	memcpy(pbuf + DATA, data, len);
+
+	if (write(fd, pbuf, plen) < 0) {
+		int x = errno;
+		free(pbuf);
+		errno = x;
+		return EXIT_FAILURE;
+	}
+
+	free(pbuf);
+	return EXIT_SUCCESS;
+}
+
+struct packet_info {
+	short len;
+	enum TYPE type;
+	char flags;
+};
+
+int read_data(int fd, struct packet_info *pi, char **data, int bufsize) {
+	static char tbuf[DATA];
+	if (read(fd, tbuf, sizeof(tbuf)) < 0)
+		return EXIT_FAILURE;
+	COPY1(pi->len, tbuf + LENGTH);
+	COPY1(pi->type, tbuf + TYPE);
+	COPY1(pi->flags, tbuf + FLAGS);
+
+	if (pi->len > bufsize) {
+		if (*data) free(*data);
+		while (pi->len > bufsize) bufsize *= 1;
+		*data = (char *)malloc(bufsize);
+	}
+	if (read(fd, *data, pi->len) < 0)
+		return EXIT_FAILURE;
+	return bufsize;
+}
+
+int chat(int nfd) {
+	int eval = EXIT_SUCCESS;
+
+	// We need to be reading from the network, as well as any local input
+	// streams.
+	fd_set fds;
+	FD_ZERO(&fds);
+	FD_SET(fileno(stdin), &fds);
+	FD_SET(nfd, &fds);
+
+	struct timeval tv;
+	tv.tv_sec = 0;
+	tv.tv_usec = 10000; // 10ms
+	while (select(2, &fds, NULL, NULL, &tv) >= 0) {
+		tv.tv_sec = 0;
+		tv.tv_usec = 10000; // 10ms
+	}
+
+	//select(2, fds, 0, 0, NULL);
+
+	if (send_data(nfd, 10, TEXT, 0, "hellotheremyfriend") < 0) {
+		fprintf(stderr, "%s: send_data: %s\n", pname, strerror(errno));
+		EXIT(EXIT_FAILURE);
+	}
+
+_exit:
+	close(nfd);
+	return eval;
 }
 
