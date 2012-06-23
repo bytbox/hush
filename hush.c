@@ -29,15 +29,26 @@
 #define COPY1(d, s) memcpy(&(d), (s), sizeof(d))
 #define COPY2(d, s) memcpy((d), &(s), sizeof(s))
 
+// Types of packets that can be sent.
 enum TYPE {TEXT, SOUND};
 
 // Flags for data
+// (none, right now)
 
-char *pname;
+// Offsets of fields in a data packet.
+enum OFFSETS {OLENGTH=0, OTYPE=2, OFLAGS=3, ODATA=4};
+
+// Internal representation of a packet.
+struct packet_info {
+	short len;
+	enum TYPE type;
+	char flags;
+};
+
+char *pname; // argv[0] - for error reporting
 
 int client(const char *, const char *);
 int server(const char *);
-
 int chat(int);
 
 int main(int argc, char *argv[]) {
@@ -72,6 +83,8 @@ _exit:
 }
 
 int client(const char *host, const char *port) {
+	// Simple networking code to connect to the specified host and port.
+	// The actual logic is in chat().
 	struct addrinfo *ai = NULL;
 	int en = 0, eval = EXIT_SUCCESS;
 	if ((en = getaddrinfo(host, port, NULL, &ai))) {
@@ -103,6 +116,9 @@ _exit:
 }
 
 int server(const char *port) {
+	// Simple networking code to start a server and handle a series of
+	// clients until user termination, ignoring failures. The actual logic
+	// is in chat().
 	struct addrinfo *ai = NULL;
 	int en = 0, eval = EXIT_SUCCESS;
 	if ((en = getaddrinfo(NULL, port, NULL, &ai))) {
@@ -144,9 +160,9 @@ _exit:
 	return eval;
 }
 
-enum OFFSETS {OLENGTH=0, OTYPE=2, OFLAGS=3, ODATA=4};
-
-int send_data(int fd, short len, enum TYPE type, char flags, const char *data) {
+// Send a data packet over the network. On failure, we return EXIT_FAILURE set
+// errno.
+int send_data(int fd, short len, enum TYPE typ, char flags, const char *data) {
 	/* The format of the data sent is:
 	 *   1-2 length
 	 *   3   type
@@ -160,11 +176,13 @@ int send_data(int fd, short len, enum TYPE type, char flags, const char *data) {
 	int plen = len + ODATA;
 	char *pbuf = (char *)malloc(plen);
 	COPY2(pbuf + OLENGTH, len);
-	COPY2(pbuf + OTYPE, type);
+	COPY2(pbuf + OTYPE, typ);
 	COPY2(pbuf + OFLAGS, flags);
 	memcpy(pbuf + ODATA, data, len);
 
-	if (write(fd, pbuf, plen) < 0) {
+	if (write(fd, pbuf, plen) < plen) {
+		// An insufficient amount of data could be written. Assume an
+		// error and bail out.
 		int x = errno;
 		free(pbuf);
 		errno = x;
@@ -174,12 +192,6 @@ int send_data(int fd, short len, enum TYPE type, char flags, const char *data) {
 	free(pbuf);
 	return EXIT_SUCCESS;
 }
-
-struct packet_info {
-	short len;
-	enum TYPE type;
-	char flags;
-};
 
 // Read a data packet from the network.
 // 
