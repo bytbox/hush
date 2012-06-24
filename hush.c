@@ -29,6 +29,12 @@
 #define COPY1(d, s) memcpy(&(d), (s), sizeof(d))
 #define COPY2(d, s) memcpy((d), &(s), sizeof(s))
 
+/* All communication is done with inside packets (not the TCP kind), each of
+ * which contains 4 bytes of meta-data specifying the length and nature of the
+ * data contained within. This allows us to multiplex multiple streams (audio,
+ * text, etc...) over a single connection.
+ */
+
 // Types of packets that can be sent.
 enum TYPE {TEXT, SOUND};
 
